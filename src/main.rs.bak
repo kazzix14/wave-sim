@@ -1,0 +1,102 @@
+use std::sync::mpsc;
+use std::thread;
+
+const X_SIZE: usize = 32 + 2;
+const Y_SIZE: usize = 32 + 2;
+
+fn main() {
+    println!("Hello, world!");
+
+    // 0.001 m = 1 mm
+    const DX: f32 = 0.001;
+
+    // speed of sound in air
+    const SPEED: f32 = 340.0;
+
+    const DT: f32 = 0.4 / (SPEED / DX);
+
+    // CFL must be below 1.0
+    const CFL: f32 = SPEED * (DT / DX);
+    const CFL_POW_2: f32 = CFL * CFL;
+
+    assert!(CFL <= 1.0, "CFL : {}", CFL);
+
+    let mut space_next = [[0.0; X_SIZE]; Y_SIZE];
+    let mut space_current = [[0.0; X_SIZE]; Y_SIZE];
+    let mut space_previous = [[0.0; X_SIZE]; Y_SIZE];
+
+    space_current[Y_SIZE / 2][X_SIZE / 2] = 1.0;
+
+    /*
+     * FDTD
+     * ===== 2 Dimentional Space =====
+     * pressure_next =
+     *                   2 * pressure_current
+     *                   - pressure_previous
+     *                   + (CFL ^ 2) * (pressure_current_up +
+     *                                  pressure_current_down +
+     *                                  pressure_current_left +
+     *                                  pressure_current_right -
+     *                                  4 * pressure_current)
+     *
+     */
+
+    for _ in 0..48000 {
+        /*
+        for y in 0..Y_SIZE {
+            for x in 0..X_SIZE {
+                print!("{:?}", space_current[y][x]);
+            }
+            println!("");
+        }
+        println!("");
+        */
+
+        for y in 0 + 1..Y_SIZE - 1 {
+            for x in 0 + 1..X_SIZE - 1 {
+                let pressure_current = space_current[y][x];
+                let pressure_previous = space_previous[y][x];
+                let pressure_current_up = space_current[y - 1][x];
+                let pressure_current_down = space_current[y + 1][x];
+                let pressure_current_left = space_current[y][x - 1];
+                let pressure_current_right = space_current[y][x + 1];
+                space_next[y][x] = 2.0 * pressure_current - pressure_previous
+                    + (CFL_POW_2)
+                        * (pressure_current_up
+                            + pressure_current_down
+                            + pressure_current_left
+                            + pressure_current_right
+                            - 4.0 * pressure_current);
+            }
+        }
+
+        space_previous.copy_from_slice(&space_current);
+        space_current.copy_from_slice(&space_next);
+    }
+}
+/*
+fn gui(rx: mpsc::Receiver<[[f32; X_SIZE]; Y_SIZE]>) {
+    use glium::{glutin, Surface};
+
+    let mut events_loop = glutin::EventsLoop::new();
+    let wb = glutin::WindowBuilder::new();
+    let cb = glutin::ContextBuilder::new();
+    let display = glium::Display::new(wb, cb, &events_loop).unwrap();
+
+    let mut closed = false;
+    while !closed {
+        let mut target = display.draw();
+        target.clear_color(0.0, 0.0, 1.0, 1.0);
+        if let Ok(space) = rx.recv() {}
+        target.finish().unwrap();
+
+        events_loop.poll_events(|ev| match ev {
+            glutin::Event::WindowEvent { event, .. } => match event {
+                glutin::WindowEvent::CloseRequested => closed = true,
+                _ => (),
+            },
+            _ => (),
+        });
+    }
+}
+*/

@@ -1,0 +1,9 @@
+[package]
+name = "wave-sim"
+version = "0.1.0"
+authors = ["kazuma murata <atugari27@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+derive_builder = "0.9"
+rand = "0.7"
