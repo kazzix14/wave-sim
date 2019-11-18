@@ -232,6 +232,8 @@ impl System {
         let mut pressure_mouth = 0.0;
         let mut mouse_left = ElementState::Released;
         let mut mouse_right = ElementState::Released;
+        let mut mouse_middle_pressed = true;
+        let mut u_bore_state = false;
         while run {
             let logical_size = window.get_inner_size().unwrap();
 
@@ -249,11 +251,14 @@ impl System {
                                 ((1.0 - position.y / logical_size.height) * crate::HEIGHT as f64)
                                     as usize,
                             );
-                            pressure_mouth = position.y / logical_size.height * 2.0;
+                            pressure_mouth = position.y / logical_size.height * 0.1;
                         }
                         WindowEvent::MouseInput { state, button, .. } => match button {
                             MouseButton::Left => mouse_left = state,
                             MouseButton::Right => mouse_right = state,
+                            MouseButton::Middle if state == ElementState::Pressed => {
+                                mouse_middle_pressed = true
+                            }
                             _ => (),
                         },
                         _ => (),
@@ -287,6 +292,14 @@ impl System {
                         pressure_mouth as f32,
                     )))
                     .unwrap();
+            }
+
+            if mouse_middle_pressed == true {
+                u_bore_state = !u_bore_state;
+                tx_order
+                    .send(Order::Main(Main::SetUBore(u_bore_state)))
+                    .unwrap();
+                mouse_middle_pressed = false;
             }
 
             {

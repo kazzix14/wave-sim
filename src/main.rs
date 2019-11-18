@@ -23,6 +23,10 @@ const TEMPERATURE_DIFFERENCE: Float = TEMPERATURE - REFERENCE_TEMPERATURE;
 const SPEED_OF_SOUND: Float = 3.4723e2 * (1.0 + 0.00166 * TEMPERATURE_DIFFERENCE);
 const SQUARED_SPEED_OF_SOUND: Float = SPEED_OF_SOUND * SPEED_OF_SOUND;
 const MEAN_DENSITY: Float = 1.1760 * (1.0 - 0.00335 * TEMPERATURE_DIFFERENCE);
+// denoted with mu
+const DYNAMIC_VISCOSITY: Float = 1.8460e-5 * (1.0 + 0.0025 * TEMPERATURE_DIFFERENCE);
+const ADIABATIC_INDEX: Float = 1.4017 * (1.0 - 0.00002 * TEMPERATURE_DIFFERENCE);
+const PRANDTL_NUMBER: Float = 0.7073 * (1.0 + 0.0004 * TEMPERATURE_DIFFERENCE);
 const PML_LAYER_THICKNESS: i16 = 10;
 const PML_REDUCTION_GAIN: Float = 0.7;
 
@@ -46,6 +50,7 @@ pub enum Gui {
 pub enum Main {
     UpdateBeta((usize, usize), Float),
     UpdatePressureMouth(Float),
+    SetUBore(bool),
 }
 
 fn main() {
@@ -62,7 +67,7 @@ fn main() {
     let width_jet = 1.2e-2;
 
     // Height
-    let z_length_bore = 0.3;
+    let z_length_bore = 1.0;
 
     let max_reed_displacement = 6.0e-4;
     let reed_shiftness = 8.0e6;
@@ -77,11 +82,11 @@ fn main() {
         (21usize, 46usize),
         (21usize, 47usize),
         (21usize, 48usize),
-        (21usize, 49usize),
+        //(21usize, 49usize),
     ];
 
     // output from excitation model
-    let bore_cell = (25usize, 45usize);
+    let bore_cell = (24usize, 45usize);
     let mic_cell = (80usize, 45usize);
 
     let mut space = SpaceBuilder::default()
@@ -110,19 +115,23 @@ fn main() {
 
         #[allow(unused_macros)]
         macro_rules! beta {
-            ($x:expr, $y:expr, $v:expr) => {{
-                let cell = space.betas.get_mut($x as usize, $y as usize).unwrap();
-                *cell = $v;
+            ($x:expr, $y:expr, $v:expr, $n: expr) => {{
+                let beta = space.betas.get_mut($x as usize, $y as usize).unwrap();
+                *beta = $v;
+                let normal = space
+                    .unit_normals
+                    .get_mut($x as usize, $y as usize)
+                    .unwrap();
+                *normal = $n;
             }};
         }
 
         #[allow(unused_macros)]
         macro_rules! betas {
-            ($xs:expr, $xe:expr, $ys:expr, $ye:expr, $v:expr) => {{
+            ($xs:expr, $xe:expr, $ys:expr, $ye:expr, $v:expr, $n:expr) => {{
                 for y in $ys..$ye {
                     for x in $xs..$xe {
-                        let cell = space.betas.get_mut(x as usize, y as usize).unwrap();
-                        *cell = $v;
+                        beta!(x, y, $v, $n);
                     }
                 }
             }};
@@ -131,9 +140,11 @@ fn main() {
         //pressure!(10, 20, 10.0);
         //vector!(100, 100, (0.1, 1.0));
 
-        betas!(20, 71, 39, 41, 0.0);
-        betas!(20, 71, 50, 52, 0.0);
-        betas!(20, 22, 39, 52, 0.0);
+        betas!(20, 71, 39, 41, 0.0, (0.0, 1.0));
+        betas!(20, 71, 49, 51, 0.0, (0.0, -1.0));
+        betas!(20, 22, 39, 51, 0.0, (1.0, 0.0));
+        //betas!(50, 51, 39, 45, 0.0, (0.0, 0.0));
+        //betas!(50, 51, 46, 52, 0.0, (0.0, 0.0));
         //set!(0, 1, 1.0);
         //set!(2, 2, 1.0);
     }
@@ -152,6 +163,7 @@ fn main() {
     launch_gui(Arc::clone(&mem), tx_gui, rx_gui);
 
     let mut fps_counter = FPSCounter::new();
+    let mut u_bore_state = false;
     loop {
         #[cfg(feature = "gui")]
         for o in rx_main.try_iter() {
@@ -160,9 +172,19 @@ fn main() {
                     Main::UpdateBeta(pos, value) => {
                         let beta = space.beta_mut(pos.0, pos.1);
                         *beta = value;
+
+                        let cell = space.cells_current.get_mut(pos.0, pos.1).unwrap();
+                        *cell = Cell::default();
+                        let cell = space.cells_next.get_mut(pos.0, pos.1).unwrap();
+                        *cell = Cell::default();
+                        let cell = space.cells_previous0.get_mut(pos.0, pos.1).unwrap();
+                        *cell = Cell::default();
                     }
                     Main::UpdatePressureMouth(value) => {
                         pressure_mouth = value;
+                    }
+                    Main::SetUBore(value) => {
+                        u_bore_state = value;
                     }
                 }
             }
@@ -194,6 +216,18 @@ fn main() {
         } else {
             0.0
         };
+
+        let mut u_bore = {
+            let w = 0.01;
+            let coef = 0.5
+                + 0.5
+                    * (4.0 * (-1.0 + (pressure_max - delta_pressure) / (w * pressure_max))).tanh();
+
+            u_bore * coef
+        };
+        if !u_bore_state {
+            u_bore = 0.0;
+        }
 
         // apply excitation
         {
@@ -239,7 +273,7 @@ fn main() {
         }
     }
 }
-
+#[cfg(feature = "gui")]
 fn launch_gui(mem: Arc<Mutex<Vec<Float>>>, tx: mpsc::Sender<Order>, rx: mpsc::Receiver<Order>) {
     thread::spawn(move || {
         let system = gui::init(file!());
@@ -348,13 +382,22 @@ pub struct Space {
     pub height: usize,
 
     #[builder(setter(skip), default = "self.grid()?")]
-    pub cells_previous: Grid<Cell>,
+    pub cells_feedback1: Grid<Cell>,
+
+    #[builder(setter(skip), default = "self.grid()?")]
+    pub cells_feedback0: Grid<Cell>,
+
+    #[builder(setter(skip), default = "self.grid()?")]
+    pub cells_previous0: Grid<Cell>,
 
     #[builder(setter(skip), default = "self.grid()?")]
     pub cells_current: Grid<Cell>,
 
     #[builder(setter(skip), default = "self.grid()?")]
     pub cells_next: Grid<Cell>,
+
+    #[builder(setter(skip), default = "self.grid()?")]
+    pub unit_normals: Grid<(Float, Float)>,
 
     #[builder(private, default = "self.grid()?")]
     pub betas: Grid<Float>,
@@ -374,7 +417,6 @@ impl SpaceBuilder {
             .build()
             .unwrap())
     }
-
     fn betas_from(&mut self, value: Float) -> &mut Self {
         self.betas = Some(
             GridBuilder::default()
@@ -404,12 +446,92 @@ impl Space {
     pub fn target_mut<U: Into<usize>>(&mut self, x: U, y: U) -> &mut Cell {
         self.targets.get_mut(x, y).unwrap()
     }
+
+    pub fn normal_mut<U: Into<usize>>(&mut self, x: U, y: U) -> &mut (Float, Float) {
+        self.unit_normals.get_mut(x, y).unwrap()
+
+        /*
+            let mut uns = vec![(0.0f32, 0.0f32); self.width * self.height];
+
+            macro_rules! beta {
+                ($x: expr, $y: expr) => {{
+                    if let Some(value) = self.betas.get(($x) as u16, ($y) as u16) {
+                        value
+                    } else {
+                        unimplemented!();
+                    }
+                }};
+            }
+
+            for y in 1..self.height - 1 {
+                for x in 1..self.width - 1 {
+                    let beta_l = beta!(x - 1, y);
+                    let beta_r = beta!(x + 1, y);
+                    let beta_u = beta!(x, y + 1);
+                    let beta_d = beta!(x, y - 1);
+
+                    let beta_ul = beta!(x - 1, y + 1);
+                    let beta_ur = beta!(x + 1, y + 1);
+                    let beta_dl = beta!(x - 1, y - 1);
+                    let beta_dr = beta!(x + 1, y - 1);
+
+                    uns[y * self.width + x].0 = 0.0;
+                    uns[y * self.width + x].1 = 0.0;
+
+                    if *beta_l == 0.0 {
+                        uns[y * self.width + x].0 += 1.0;
+                    }
+                    if *beta_r == 0.0 {
+                        uns[y * self.width + x].0 -= 1.0;
+                    }
+                    if *beta_u == 0.0 {
+                        uns[y * self.width + x].1 -= 1.0;
+                    }
+                    if *beta_d == 0.0 {
+                        uns[y * self.width + x].1 += 1.0;
+                    }
+                    if *beta_ul == 0.0 {
+                        uns[y * self.width + x].0 += 1.0;
+                        uns[y * self.width + x].1 -= 1.0;
+                    }
+                    if *beta_ur == 0.0 {
+                        uns[y * self.width + x].0 -= 1.0;
+                        uns[y * self.width + x].1 -= 1.0;
+                    }
+                    if *beta_dl == 0.0 {
+                        uns[y * self.width + x].0 += 1.0;
+                        uns[y * self.width + x].1 += 1.0;
+                    }
+                    if *beta_dr == 0.0 {
+                        uns[y * self.width + x].0 -= 1.0;
+                        uns[y * self.width + x].1 += 1.0;
+                    }
+
+                    let abs = (uns[y * self.width + x].0.powf(2.0)
+                        + uns[y * self.width + x].1.powf(2.0))
+                    .sqrt();
+
+                    if abs != 0.0 {
+                        uns[y * self.width + x].0 /= abs;
+                        uns[y * self.width + x].1 /= abs;
+                    }
+                }
+            }
+
+            self.unit_normals = GridBuilder::default()
+                .width(self.width)
+                .height(self.height)
+                .cell(uns)
+                .build()
+                .unwrap();
+        */
+    }
 }
 
 impl Iterator for Space {
     type Item = Grid<Cell>;
     fn next(&mut self) -> Option<Self::Item> {
-        self.cells_previous = self.cells_current.to_owned();
+        self.cells_previous0 = self.cells_current.to_owned();
         self.cells_current = self.cells_next.to_owned();
 
         macro_rules! cell {
@@ -476,13 +598,16 @@ impl Iterator for Space {
                     let x = x as i16;
                     let y = y as i16;
 
-                    let (_pressure_previous, _vector_previous) = cell!(cells_previous, x, y);
-                    let (pressure_current, vector_current) = cell!(cells_current, x, y);
+                    let (pressure_left, vector_left) = cell!(cells_current, x - 1, y);
+                    let (pressure_right, vector_right) = cell!(cells_current, x + 1, y);
+                    let (pressure_down, vector_down) = cell!(cells_current, x, y - 1);
+                    let (pressure_up, vector_up) = cell!(cells_current, x, y + 1);
+
+                    let (pressure_feedback1, vector_feedback1) = cell_mut!(cells_feedback1, x, y);
+                    let (pressure_feedback0, vector_feedback0) = cell_mut!(cells_feedback0, x, y);
+                    let (pressure_previous0, vector_previous0) = cell_mut!(cells_previous0, x, y);
+                    let (pressure_current, vector_current) = cell_mut!(cells_current, x, y);
                     let (pressure_next, vector_next) = cell_mut!(cells_next, x, y);
-                    let (_pressure_left, vector_left) = cell!(cells_current, x - 1, y);
-                    let (pressure_right, _vector_right) = cell!(cells_current, x + 1, y);
-                    let (_pressure_down, vector_down) = cell!(cells_current, x, y - 1);
-                    let (pressure_up, _vector_up) = cell!(cells_current, x, y + 1);
 
                     let beta: Float = *self.betas.get(x as usize, y as usize).unwrap();
 
@@ -514,12 +639,123 @@ impl Iterator for Space {
 
                     match Calculation::from(calc) {
                         Calculation::Vector => {
-                            // TODO calc vb
-                            let vb = self.targets.get(x as usize, y as usize).unwrap().vector;
+                            let mut vb = self.targets.get(x as usize, y as usize).unwrap().vector;
+                            let normal = self.unit_normals.get(x as usize, y as usize).unwrap();
+
+                            if normal != &(0.0, 0.0) && vb == (0.0, 0.0) {
+                                fn func_l(
+                                    vec_in: (Float, Float),
+                                    vec_normal: (Float, Float),
+                                ) -> Float {
+                                    let lv = (DYNAMIC_VISCOSITY / MEAN_DENSITY).sqrt();
+                                    let lt = (DYNAMIC_VISCOSITY / (MEAN_DENSITY * PRANDTL_NUMBER))
+                                        .sqrt();
+                                    let sin2theta = {
+                                        let calc = 1.0
+                                            - ((vec_in.0 * vec_normal.0 + vec_in.1 * vec_normal.1)
+                                                / (vec_in.0.powf(2.0) + vec_in.1.powf(2.0)).sqrt())
+                                            .powf(2.0);
+                                        if calc.is_nan() {
+                                            1.0
+                                        } else {
+                                            calc
+                                        }
+                                    };
+
+                                    let numerator = lv * sin2theta + lt * (ADIABATIC_INDEX - 1.0);
+                                    let denominator =
+                                        MEAN_DENSITY * SQUARED_SPEED_OF_SOUND * 2.0f32.sqrt();
+                                    -(numerator / denominator)
+                                }
+
+                                // IIR
+                                let mut filter_y_hat = || {
+                                    const FF_COEF: [Float; 3] = [495.9, -857.0, 362.8];
+                                    const FB_COEF: [Float; 2] = [-1.35, 0.4];
+
+                                    let vec_in = match *normal {
+                                        // r
+                                        (1.0, 0.0) => vector_right,
+                                        // l
+                                        (-1.0, 0.0) => vector_left,
+                                        // u
+                                        (0.0, 1.0) => vector_up,
+                                        // d
+                                        (0.0, -1.0) => vector_down,
+                                        _ => (0.0, 0.0),
+                                    };
+
+                                    //let normal = &(-normal.0, -normal.1);
+
+                                    // TODO
+                                    // this part is wrong
+                                    // need to be fixed
+                                    let pressure = *pressure_current
+                                        + *pressure_feedback0
+                                        + *pressure_feedback1;
+                                    let ffs = [
+                                        FF_COEF[0] * func_l(vec_in, *normal) * pressure,
+                                        FF_COEF[1] * func_l(vec_in, *normal) * pressure,
+                                        FF_COEF[2] * func_l(vec_in, *normal) * pressure,
+                                    ];
+
+                                    let out = ffs[0] + ffs[1] + ffs[2];
+
+                                    let fbs = [
+                                        FB_COEF[0] * func_l(vec_in, *normal) * out,
+                                        FB_COEF[1] * func_l(vec_in, *normal) * out,
+                                    ];
+
+                                    *pressure_feedback0 = fbs[0];
+                                    *pressure_feedback1 = fbs[1];
+
+                                    out
+                                };
+
+                                let vb_abs = filter_y_hat(); // * pressure_current;
+
+                                let vb_normal = {
+                                    let abs = (vector_current.0.powf(2.0)
+                                        + vector_current.1.powf(2.0))
+                                    .sqrt();
+                                    if abs == 0.0 {
+                                        (0.0, 0.0)
+                                    } else {
+                                        (vector_current.0 / abs, vector_current.1 / abs)
+                                    }
+                                };
+
+                                vb = {
+                                    if (vb.0 != 0.0) || (vb.1 != 0.0) {
+                                        vb
+                                    } else {
+                                        let x = vb_normal.0 * vb_abs;
+                                        let y = vb_normal.1 * vb_abs;
+                                        (
+                                            if x.is_nan() { 0.0 } else { x },
+                                            if y.is_nan() { 0.0 } else { y },
+                                        )
+                                    }
+                                };
+
+                                if vb != (0.0, 0.0) {
+                                    dbg!(vb);
+                                }
+                                /*
+                                if vb.0.is_nan() {
+                                    panic!()
+                                }
+                                if vb.1.is_nan() {
+                                    panic!()
+                                }
+                                */
+                                //let vb = (0.0, 0.0);
+                            }
+
                             let squared_beta = beta.powf(2.0);
 
                             (*vector_next).0 = (beta * vector_current.0
-                                - squared_beta * TIME_STEP * (pressure_right - pressure_current)
+                                - squared_beta * TIME_STEP * (*pressure_current - pressure_left)
                                     / 1.0
                                     / CELL_SIZE
                                     / MEAN_DENSITY
@@ -527,7 +763,7 @@ impl Iterator for Space {
                                 / (beta + sigma_prime * TIME_STEP);
 
                             (*vector_next).1 = (beta * vector_current.1
-                                - squared_beta * TIME_STEP * (pressure_up - pressure_current)
+                                - squared_beta * TIME_STEP * (*pressure_current - pressure_down)
                                     / 1.0
                                     / CELL_SIZE
                                     / MEAN_DENSITY
@@ -535,13 +771,13 @@ impl Iterator for Space {
                                 / (beta + sigma_prime * TIME_STEP);
                         }
                         Calculation::Pressure => {
-                            *pressure_next = (pressure_current
+                            *pressure_next = (*pressure_current
                                 - MEAN_DENSITY
                                     * SQUARED_SPEED_OF_SOUND
                                     * TIME_STEP
-                                    * (vector_current.0 - vector_left.0 + vector_current.1
-                                        - vector_down.1)
-                                    / 2.0
+                                    * (vector_right.0 - vector_current.0 + vector_up.1
+                                        - vector_current.1)
+                                    / 1.0
                                     / CELL_SIZE)
                                 / (1.0 + sigma_prime * TIME_STEP);
                         }

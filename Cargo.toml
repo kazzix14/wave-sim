@@ -6,4 +6,17 @@ edition = "2018"
 
 [dependencies]
 derive_builder = "0.9"
+include_dir = "0.4"
+hound = "3.4"
+fps_counter = "1.0"
 rand = "0.7"
+image = "0.22"
+clipboard = "0.5"
+glium = {version = "0.25", default-features = true}
+imgui = {version = "0.3.0-pre", git = "https://github.com/Gekkio/imgui-rs"}
+imgui-glium-renderer = {version = "0.3.0-pre", git = "https://github.com/Gekkio/imgui-rs"}
+imgui-winit-support= {version = "0.3.0-pre", git = "https://github.com/Gekkio/imgui-rs"}
+
+[features]
+default = []
+gui = []
