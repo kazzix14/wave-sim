@@ -75,14 +75,10 @@ fn main() {
 
     // input to excitation model
     let excitation_cells = vec![
-        (21usize, 42usize),
         (21usize, 43usize),
         (21usize, 44usize),
         (21usize, 45usize),
         (21usize, 46usize),
-        (21usize, 47usize),
-        (21usize, 48usize),
-        //(21usize, 49usize),
     ];
 
     // output from excitation model
@@ -140,8 +136,8 @@ fn main() {
         //pressure!(10, 20, 10.0);
         //vector!(100, 100, (0.1, 1.0));
 
-        betas!(20, 71, 39, 41, 0.0, (0.0, 1.0));
-        betas!(20, 71, 49, 51, 0.0, (0.0, -1.0));
+        betas!(20, 71, 39, 43, 0.0, (0.0, 1.0));
+        betas!(20, 71, 47, 51, 0.0, (0.0, -1.0));
         betas!(20, 22, 39, 51, 0.0, (1.0, 0.0));
         //betas!(50, 51, 39, 45, 0.0, (0.0, 0.0));
         //betas!(50, 51, 46, 52, 0.0, (0.0, 0.0));
@@ -577,22 +573,22 @@ impl Iterator for Space {
         impl Calculation {
             pub fn value(&self) -> usize {
                 match *self {
-                    Calculation::Vector => 0,
-                    Calculation::Pressure => 1,
+                    Calculation::Pressure => 0,
+                    Calculation::Vector => 1,
                 }
             }
 
             pub fn from(value: usize) -> Calculation {
                 match value {
-                    0 => Calculation::Vector,
-                    1 => Calculation::Pressure,
+                    0 => Calculation::Pressure,
+                    1 => Calculation::Vector,
                     _ => unreachable!(),
                 }
             }
         }
 
         // update cells
-        for calc in Calculation::Vector.value()..=Calculation::Pressure.value() {
+        for calc in Calculation::Pressure.value()..=Calculation::Vector.value() {
             for y in 0..self.height {
                 for x in 0..self.width {
                     let x = x as i16;
@@ -668,22 +664,21 @@ impl Iterator for Space {
                                     -(numerator / denominator)
                                 }
 
+                                let vec_in = match *normal {
+                                    // r
+                                    (1.0, 0.0) => vector_right,
+                                    // l
+                                    (-1.0, 0.0) => vector_left,
+                                    // u
+                                    (0.0, 1.0) => vector_up,
+                                    // d
+                                    (0.0, -1.0) => vector_down,
+                                    _ => (0.0, 0.0), //*vector_current,
+                                };
                                 // IIR
                                 let mut filter_y_hat = || {
                                     const FF_COEF: [Float; 3] = [495.9, -857.0, 362.8];
                                     const FB_COEF: [Float; 2] = [-1.35, 0.4];
-
-                                    let vec_in = match *normal {
-                                        // r
-                                        (1.0, 0.0) => vector_right,
-                                        // l
-                                        (-1.0, 0.0) => vector_left,
-                                        // u
-                                        (0.0, 1.0) => vector_up,
-                                        // d
-                                        (0.0, -1.0) => vector_down,
-                                        _ => (0.0, 0.0),
-                                    };
 
                                     //let normal = &(-normal.0, -normal.1);
 
@@ -715,13 +710,11 @@ impl Iterator for Space {
                                 let vb_abs = filter_y_hat(); // * pressure_current;
 
                                 let vb_normal = {
-                                    let abs = (vector_current.0.powf(2.0)
-                                        + vector_current.1.powf(2.0))
-                                    .sqrt();
+                                    let abs = (vec_in.0.powf(2.0) + vec_in.1.powf(2.0)).sqrt();
                                     if abs == 0.0 {
                                         (0.0, 0.0)
                                     } else {
-                                        (vector_current.0 / abs, vector_current.1 / abs)
+                                        (vec_in.0 / abs, vec_in.1 / abs)
                                     }
                                 };
 
@@ -739,7 +732,7 @@ impl Iterator for Space {
                                 };
 
                                 if vb != (0.0, 0.0) {
-                                    dbg!(vb);
+                                    //dbg!(vb);
                                 }
                                 /*
                                 if vb.0.is_nan() {
@@ -785,7 +778,7 @@ impl Iterator for Space {
                 }
             }
 
-            if Calculation::from(calc) == Calculation::Vector {
+            if Calculation::from(calc) == Calculation::Pressure {
                 let nxt = &self.cells_next.cell;
                 self.cells_current.cell = self
                     .cells_current
@@ -793,7 +786,7 @@ impl Iterator for Space {
                     .iter_mut()
                     .enumerate()
                     .map(|(i, c)| {
-                        c.vector = nxt[i].vector;
+                        c.pressure = nxt[i].pressure;
                         *c
                     })
                     .collect();
