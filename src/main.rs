@@ -136,9 +136,9 @@ fn main() {
         //pressure!(10, 20, 10.0);
         //vector!(100, 100, (0.1, 1.0));
 
-        betas!(20, 71, 39, 43, 0.0, (0.0, 1.0));
-        betas!(20, 71, 47, 51, 0.0, (0.0, -1.0));
-        betas!(20, 22, 39, 51, 0.0, (1.0, 0.0));
+        betas!(17, 71, 35, 43, 0.0, (0.0, 1.0));
+        betas!(17, 71, 47, 55, 0.0, (0.0, -1.0));
+        betas!(17, 22, 35, 55, 0.0, (1.0, 0.0));
         //betas!(50, 51, 39, 45, 0.0, (0.0, 0.0));
         //betas!(50, 51, 46, 52, 0.0, (0.0, 0.0));
         //set!(0, 1, 1.0);
@@ -725,8 +725,12 @@ impl Iterator for Space {
                                         let x = vb_normal.0 * vb_abs;
                                         let y = vb_normal.1 * vb_abs;
                                         (
-                                            if x.is_nan() { 0.0 } else { x },
-                                            if y.is_nan() { 0.0 } else { y },
+                                            // right code
+                                            //if x.is_nan() { 0.0 } else { x },
+                                            //if y.is_nan() { 0.0 } else { y },
+
+                                            // using wrong code
+                                            0.0, 0.0,
                                         )
                                     }
                                 };
@@ -748,16 +752,16 @@ impl Iterator for Space {
                             let squared_beta = beta.powf(2.0);
 
                             (*vector_next).0 = (beta * vector_current.0
-                                - squared_beta * TIME_STEP * (*pressure_current - pressure_left)
-                                    / 1.0
+                                - squared_beta * TIME_STEP * (pressure_right - pressure_left)
+                                    / 2.0
                                     / CELL_SIZE
                                     / MEAN_DENSITY
                                 + sigma_prime * TIME_STEP * vb.0)
                                 / (beta + sigma_prime * TIME_STEP);
 
                             (*vector_next).1 = (beta * vector_current.1
-                                - squared_beta * TIME_STEP * (*pressure_current - pressure_down)
-                                    / 1.0
+                                - squared_beta * TIME_STEP * (pressure_up - pressure_down)
+                                    / 2.0
                                     / CELL_SIZE
                                     / MEAN_DENSITY
                                 + sigma_prime * TIME_STEP * vb.1)
@@ -768,9 +772,9 @@ impl Iterator for Space {
                                 - MEAN_DENSITY
                                     * SQUARED_SPEED_OF_SOUND
                                     * TIME_STEP
-                                    * (vector_right.0 - vector_current.0 + vector_up.1
-                                        - vector_current.1)
-                                    / 1.0
+                                    * (vector_right.0 - vector_left.0 + vector_up.1
+                                        - vector_down.1)
+                                    / 2.0
                                     / CELL_SIZE)
                                 / (1.0 + sigma_prime * TIME_STEP);
                         }

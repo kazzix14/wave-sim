@@ -37,7 +37,7 @@ pub fn init(title: &str) -> System {
     let context = glutin::ContextBuilder::new().with_vsync(true);
     let builder = glutin::WindowBuilder::new()
         .with_title(title.to_owned())
-        .with_dimensions(glutin::dpi::LogicalSize::new(1024f64, 1024f64));
+        .with_dimensions(glutin::dpi::LogicalSize::new(640f64, 480f64));
     let display =
         Display::new(builder, context, &events_loop).expect("Failed to initialize display");
 
@@ -303,7 +303,14 @@ impl System {
             }
 
             {
-                let vec = mem.lock().unwrap();
+                let mut vec = mem.lock().unwrap();
+                let mut vec = vec.to_owned();
+                for y in (0..crate::HEIGHT - 1) {
+                    for x in (0..crate::WIDTH - 1).step_by(2) {
+                        let org = vec[y * crate::WIDTH + x];
+                        vec[y * crate::WIDTH + x + 1] = org;
+                    }
+                }
 
                 let mut mapping = buffer.map();
                 for (i, val) in mapping.values.iter_mut().enumerate() {
