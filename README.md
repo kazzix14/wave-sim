@@ -15,7 +15,7 @@ or
 
     cargo run --release --features gui
 
-When gui feature enable, it make window so that you can see the waves and change settings.  
+When gui feature enabled, it makes window so that you can see the waves and change settings.  
 Middle click to toggle blow state. Right click to set blow pressure (Y coordinate of the cursor is gonna be pressure value. top is origin.). Left click to draw walls.
 
 # LISCENSE
