@@ -1,7 +1,7 @@
 # wave-simulator
 
 This repository is remnant of my struggle to reproduce aerophone simulation software presented by [this paper](https://www.microsoft.com/en-us/research/wp-content/uploads/2016/10/Aerophones.pdf).
-It can be run, but it does not work as a aerophone simulator. As my interest goes to [this](https://github.com/kazzix14/raytrace-reverb) and this repository is left WIP.
+This can be run, but it does not work as a aerophone simulator. As my interest goes to [this](https://github.com/kazzix14/raytrace-reverb), this repository is left WIP.
 
 ![wave-sim3](https://user-images.githubusercontent.com/29710855/104088201-6193ed80-52a8-11eb-8ff3-e09289732460.gif)
 
